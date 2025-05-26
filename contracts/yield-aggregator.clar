@@ -120,3 +120,56 @@
     (ok true)
   )
 )
+
+;; Deactivate protocol for risk management
+(define-public (deactivate-protocol (protocol-id uint))
+  (begin
+    (asserts! (is-contract-owner tx-sender) ERR-UNAUTHORIZED)
+    (asserts! (is-valid-protocol-id protocol-id) ERR-INVALID-INPUT)
+    (map-set supported-protocols { protocol-id: protocol-id }
+      (merge
+        (unwrap! (map-get? supported-protocols { protocol-id: protocol-id })
+          ERR-INVALID-PROTOCOL
+        ) { active: false }
+      ))
+    (var-set total-protocols (- (var-get total-protocols) u1))
+    (ok true)
+  )
+)
+
+;; DEPOSIT MANAGEMENT FUNCTIONS
+
+;; Deposit STX tokens into selected yield protocol
+(define-public (deposit
+    (protocol-id uint)
+    (amount uint)
+  )
+  (let (
+      (protocol (unwrap! (map-get? supported-protocols { protocol-id: protocol-id })
+        ERR-INVALID-PROTOCOL
+      ))
+      (current-total-deposits (default-to { total-deposit: u0 }
+        (map-get? protocol-total-deposits { protocol-id: protocol-id })
+      ))
+      (max-protocol-deposit (/ (* (get max-allocation-percentage protocol) BASE-DENOMINATION) u100))
+    )
+    (asserts! (is-valid-protocol-id protocol-id) ERR-INVALID-INPUT)
+    (asserts! (is-valid-deposit-amount amount) ERR-INVALID-INPUT)
+    (asserts! (get active protocol) ERR-INVALID-PROTOCOL)
+    (asserts!
+      (<= (+ (get total-deposit current-total-deposits) amount)
+        max-protocol-deposit
+      )
+      ERR-PROTOCOL-LIMIT-REACHED
+    )
+    (map-set user-deposits {
+      user: tx-sender,
+      protocol-id: protocol-id,
+    } {
+      amount: amount,
+      deposit-time: stacks-block-height,
+    })
+    (map-set protocol-total-deposits { protocol-id: protocol-id } { total-deposit: (+ (get total-deposit current-total-deposits) amount) })
+    (ok true)
+  )
+)
